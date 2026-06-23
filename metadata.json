@@ -1,0 +1,6 @@
+{
+  "name": "NovaSearch",
+  "description": "A production-grade distributed search engine in Modern C++20/23, visualized with a real-time cluster monitoring dashboard, interactive crawler, indexing simulator, and query playgrounds.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

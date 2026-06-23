@@ -1,0 +1,94 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+
+  /* Theme overrides for Technical Dashboard / Data Grid style */
+  --color-slate-950: #0B0E11;
+  --color-slate-900: #15191E;
+  --color-slate-800: #2D333B;
+  --color-slate-705: #363C44;
+  --color-slate-600: #4B5563;
+  --color-slate-500: #768390;
+  --color-slate-400: #ADBAC7;
+  --color-slate-300: #C9D1D9;
+  --color-slate-200: #E1E6EB;
+  --color-slate-100: #FFFFFF;
+
+  --color-sky-500: #4B96FF;
+  --color-sky-400: #4B96FF;
+  --color-sky-300: #7CB0FF;
+  
+  --color-indigo-950: #1C232B;
+  --color-indigo-900: #232B35;
+  --color-indigo-600: #357AE8;
+  --color-indigo-500: #4B96FF;
+  --color-indigo-400: #4B96FF;
+  --color-indigo-300: #7CB0FF;
+
+  --color-amber-500: #4B96FF;
+  --color-amber-400: #F1C40F;
+  --color-amber-350: #F39C12;
+  --color-amber-950: #262412;
+
+  --color-emerald-950: #12241A;
+  --color-emerald-500: #2ECC71;
+  --color-emerald-400: #2ECC71;
+  --color-emerald-300: #58D68D;
+
+  --color-purple-950: #1C1924;
+  --color-purple-600: #8E44AD;
+  --color-purple-400: #9B59B6;
+}
+
+:root {
+  --bg: #0B0E11;
+  --surface: #15191E;
+  --border: #2D333B;
+  --ink: #ADBAC7;
+  --accent: #4B96FF;
+  --success: #2ECC71;
+  --warning: #F1C40F;
+}
+
+html, body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  overflow-x: hidden;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink);
+  opacity: 0.5;
+}
+
+/* Animation durations */
+@keyframes pulseGlow {
+  0%, 100% {
+    opacity: 0.8;
+    box-shadow: 0 0 4px var(--success);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 12px var(--success);
+  }
+}
+.pulse-green {
+  animation: pulseGlow 2s infinite ease-in-out;
+}

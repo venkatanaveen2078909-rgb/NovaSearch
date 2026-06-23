@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package novasearch.proto;
+
+// Service definition for searching a particular index shard
+service SearchService {
+    rpc QueryShard (SearchRequest) returns (SearchResponse);
+    rpc Heartbeat (PingRequest) returns (PingResponse);
+}
+
+// Service definition for cluster coordination & worker registrations
+service CoordinatorService {
+    rpc RegisterShardNode (RegisterRequest) returns (RegisterResponse);
+}
+
+message SearchRequest {
+    string query = 1;
+    int32 result_limit = 2;
+    string algorithm = 3; // "bm25" or "tfidf"
+}
+
+message ShardItem {
+    uint32 doc_id = 1;
+    string url = 2;
+    string title = 3;
+    string snippet = 4;
+    double score = 5;
+}
+
+message SearchResponse {
+    uint32 shard_id = 1;
+    repeated ShardItem results = 2;
+    double latency_ms = 3;
+    bool success = 4;
+}
+
+message PingRequest {
+    uint16 sender_node_id = 1;
+}
+
+message PingResponse {
+    bool ok = 1;
+    double load_average = 2;
+}
+
+message RegisterRequest {
+    uint16 shard_id = 1;
+    string grpc_address = 2;
+    repeated string term_ranges = 3; // e.g., ["a", "f"]
+}
+
+message RegisterResponse {
+    bool success = 1;
+    string assigned_token = 2;
+}
