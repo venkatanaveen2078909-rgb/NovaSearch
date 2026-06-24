@@ -13,44 +13,34 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'cluster' | 'search' | 'crawler' | 'architecture' | 'code'>('cluster');
 
   // --- 1. Distributed Shards State (Partitions representation) ---
-  const [shards, setShards] = useState<ShardNodeStat[]>([
-    {
-      id: 1,
-      name: 'ns-shard-leaf-001',
-      address: '0.0.0.0:50051',
-      status: 'ONLINE',
-      documentCount: 2,
-      vocabularySize: 55,
-      latencyMs: 12.4,
-      qps: 1.2,
-      cpuUsage: 8,
-      memUsage: 32
-    },
-    {
-      id: 2,
-      name: 'ns-shard-leaf-002',
-      address: '0.0.0.0:50052',
-      status: 'ONLINE',
-      documentCount: 3,
-      vocabularySize: 72,
-      latencyMs: 15.1,
-      qps: 1.4,
-      cpuUsage: 11,
-      memUsage: 41
-    },
-    {
-      id: 3,
-      name: 'ns-shard-leaf-003',
-      address: '0.0.0.0:50053',
-      status: 'ONLINE',
-      documentCount: 2,
-      vocabularySize: 42,
-      latencyMs: 9.8,
-      qps: 0.9,
-      cpuUsage: 6,
-      memUsage: 25
-    }
-  ]);
+  const [shards, setShards] = useState<ShardNodeStat[]>([]);
+
+  // Fetch actual shard stats from the real backend
+  useEffect(() => {
+    const fetchShards = async () => {
+      try {
+        const res = await fetch('/api/shards');
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setShards(prev => {
+            // Merge actual stats with local simulated status (to keep UI fault injection working)
+            return data.map(backendShard => {
+              const existing = prev.find(p => p.id === backendShard.id);
+              return {
+                ...backendShard,
+                status: existing && existing.status === 'FAILED' ? 'FAILED' : backendShard.status
+              };
+            });
+          });
+        }
+      } catch (e) {
+        console.error('Failed to fetch shard telemetry from backend');
+      }
+    };
+    fetchShards();
+    const interval = setInterval(fetchShards, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
   // --- 2. Live Cluster gRPC trace logs ---
   const [traceLogs, setTraceLogs] = useState<GRPCTraceEvent[]>([]);

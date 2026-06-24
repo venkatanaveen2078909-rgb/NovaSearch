@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ShardNodeStat, SearchResultItem, GRPCTraceEvent } from '../types';
-import { mockDocuments, trieWords } from '../data';
+import { trieWords } from '../data';
 import { 
   Search, ShieldAlert, CheckCircle, Database, Network, Clock, Sparkles, HelpCircle, Circle 
 } from 'lucide-react';
@@ -71,9 +71,8 @@ export const SearchPlayground: React.FC<SearchPlaygroundProps> = ({
     return dp[len1][len2];
   };
 
-  // 1. Dynamic Autocomplete Lookups (O(k) Simulation)
+  // 1. Dynamic Autocomplete Lookups — queries Postgres via coordinator API
   useEffect(() => {
-    // Locate the last typed word
     const words = query.trim().split(/\s+/);
     const lastWord = words[words.length - 1]?.toLowerCase() || '';
 
@@ -82,13 +81,13 @@ export const SearchPlayground: React.FC<SearchPlaygroundProps> = ({
       return;
     }
 
-    const matches = trieWords
-      .filter(item => item.word.startsWith(lastWord) && item.word !== lastWord)
-      .sort((a, b) => b.freq - a.freq)
-      .slice(0, 4)
-      .map(item => item.word);
+    const controller = new AbortController();
+    fetch('/api/autocomplete?q=' + encodeURIComponent(lastWord), { signal: controller.signal })
+      .then(r => r.json())
+      .then((data: string[]) => setSuggestions(data))
+      .catch(() => {});
 
-    setSuggestions(matches);
+    return () => controller.abort();
   }, [query]);
 
   const selectSuggestion = (word: string) => {
@@ -290,15 +289,13 @@ export const SearchPlayground: React.FC<SearchPlaygroundProps> = ({
     return hasMistake ? correctedTokens.join(' ') : null;
   };
 
-  // 4. Integrated distributed execution trigger (query search flow orchestration)
+  // 4. Integrated distributed execution trigger — calls REAL backend coordinator API
   const handleSearchSubmit = async (searchQuery: string) => {
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     setSpellingSuggestion(null);
     setSuggestions([]);
 
-    const cacheKey = `${searchQuery.trim()}-${rankingAlgo}`;
-    const cleanTerms = searchQuery.toLowerCase().split(/\W+/).filter(Boolean);
     const ast = compileAST(searchQuery);
     setAstTree(ast);
 
@@ -312,117 +309,75 @@ export const SearchPlayground: React.FC<SearchPlaygroundProps> = ({
 
     // Step 1: Coordinator Received Client Search
     addStep(`Query Coordinator received request query [${searchQuery.toUpperCase()}]`, 'success');
-    addTraceLog('Client', 'Coordinator', 'grpc::SearchRequest', `query: "${searchQuery}"`, 'SEND');
-    await new Promise(r => setTimeout(r, 400));
+    addTraceLog('Client', 'Coordinator', 'http::SearchRequest', `query: "${searchQuery}"`, 'SEND');
+    await new Promise(r => setTimeout(r, 300));
 
-    // Step 2: Query Cache Checking
-    const isCached = queryCacheRef.current[cacheKey];
-    if (isCached) {
-      setIsCacheHit(true);
-      setSearchLatency(isCached.latency);
-      setResults(isCached.results);
-      addStep(`Cache Hit! Retreived data from Query coordinator LRU Cache (latency: ${isCached.latency.toFixed(2)} ms)`, 'success');
-      addTraceLog('Coordinator', 'Client', 'grpc::SearchResponse', 'cache_hit: true', 'SUCCESS');
-      triggerSearchMetric(isCached.latency, true);
-      setIsSearching(false);
-      return;
-    }
-
-    setIsCacheHit(false);
-    addStep('Query LRU cache Miss. Spawning thread pool futures for shard parallel fan-out...', 'info');
-    await new Promise(r => setTimeout(r, 450));
-
-    // Step 3: Parse query terms & identify target Shards
-    addStep('Search AST grammar parsed. Mapping terms to partitioned nodes...', 'info');
-    await new Promise(r => setTimeout(r, 400));
-
-    // Step 4: Fan out queries to shards
-    const activeShards = shards.filter(s => s.status === 'ONLINE');
-    const offlineShards = shards.filter(s => s.status !== 'ONLINE');
-
-    if (activeShards.length === 0) {
-      addStep('Critical Alert: No active Shards are online to handle search transactions!', 'warning');
-      setResults([]);
-      setIsSearching(false);
-      return;
-    }
-
-    // Parallel gRPC Call Visualizer
-    activeShards.forEach(s => {
-      addStep(`Dispatched dynamic parallel gRPC Search RPC to Shard Node: ${s.name} (${s.address})`, 'info');
-      addTraceLog('Coordinator', `Shard-0${s.id}`, 'grpc::QueryShard', `query: "${searchQuery}"`, 'SEND');
+    addStep('Coordinator fan-out: dispatching search to all shard servers in parallel...', 'info');
+    shards.filter(s => s.status === 'ONLINE').forEach(s => {
+      addTraceLog('Coordinator', `Shard-0${s.id}`, 'http::POST /api/search', `query: "${searchQuery}"`, 'SEND');
     });
+    await new Promise(r => setTimeout(r, 200));
 
-    offlineShards.forEach(s => {
-      addStep(`Fatal Warning: Connection timed out to partitioned Shard Node: ${s.name}. Node bypassed.`, 'warning');
-      addTraceLog('Coordinator', `Shard-0${s.id}`, 'grpc::QueryShard', 'TCP handshake failure / Connection timed out', 'ERROR');
-    });
-
-    await new Promise(r => setTimeout(r, 800));
-
-    // Step 5: Shard Processing and scoring calculations (local indexes)
-    const partialResults: SearchResultItem[] = [];
-    
-    // Simulate parallel retrieval scoring locally matching active shards ranges
-    activeShards.forEach(shard => {
-      // Divide documents arbitrarily among shards to simulate partitions
-      const shardDocs = mockDocuments.filter(d => {
-        if (shard.id === 1) return d.id === 1 || d.id === 4;
-        if (shard.id === 2) return d.id === 2 || d.id === 5 || d.id === 7;
-        return d.id === 3 || d.id === 6;
+    // Step 2: Call real backend coordinator API
+    try {
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery, algo: rankingAlgo })
       });
+      const data = await response.json();
 
-      addStep(`Shard-0${shard.id} completed index execution on partitioned slice (returned matches)`, 'success');
-      addTraceLog(`Shard-0${shard.id}`, 'Coordinator', 'grpc::SearchResponse', `Success: returned candidate matching postings`, 'SUCCESS');
+      const isCached = data.cacheHit;
+      setIsCacheHit(isCached);
+      setSearchLatency(data.latency);
 
-      shardDocs.forEach(doc => {
-        const rating = rankingAlgo === 'bm25' 
-          ? calculateRelevanceBM25(doc.content, cleanTerms, doc.id)
-          : calculateRelevanceTFIDF(doc.content, cleanTerms, doc.id);
-
-        if (rating.score > 0) {
-          partialResults.push({
-            id: doc.id,
-            url: doc.url,
-            title: doc.title,
-            score: rating.score,
-            shardId: shard.id,
-            snippet: doc.content, // Snippet will highlight on render panel
-            matchTerms: rating.matches
+      if (isCached) {
+        addStep(`Cache Hit! Retrieved from coordinator LRU cache (latency: ${data.latency.toFixed(2)} ms)`, 'success');
+        addTraceLog('Coordinator', 'Client', 'http::SearchResponse', 'cache_hit: true', 'SUCCESS');
+      } else {
+        // Log shard responses
+        if (data.shardResponses) {
+          data.shardResponses.forEach((sr: any) => {
+            if (sr.success) {
+              addStep(`Shard-0${sr.shardId} returned ${sr.resultCount} results from Postgres`, 'success');
+              addTraceLog(`Shard-0${sr.shardId}`, 'Coordinator', 'http::SearchResponse', `${sr.resultCount} results`, 'SUCCESS');
+            } else {
+              addStep(`Shard-0${sr.shardId} FAILED — connection refused`, 'warning');
+              addTraceLog(`Shard-0${sr.shardId}`, 'Coordinator', 'http::SearchResponse', 'Connection refused', 'ERROR');
+            }
           });
         }
-      });
-    });
-
-    await new Promise(r => setTimeout(r, 550));
-
-    // Step 6:Coordinator Merges and globally sorts
-    addStep('Coordinator merged shard segments. Resolving overlaps, applying PageRank booster weightings, and sorting...', 'info');
-    
-    // Global sorting
-    const sortedResults = partialResults.sort((a, b) => b.score - a.score);
-    
-    await new Promise(r => setTimeout(r, 500));
-
-    // Final Setup
-    const computedLatency = parseFloat((80 + Math.random() * 45).toFixed(2));
-    setSearchLatency(computedLatency);
-    setResults(sortedResults);
-
-    // Save under dynamic coordinator Query Cache
-    queryCacheRef.current[cacheKey] = { results: sortedResults, latency: computedLatency };
-    triggerSearchMetric(computedLatency, false);
-
-    addStep(`Distributed Search OK. Consolidated ${sortedResults.length} matching hits in: ${computedLatency.toFixed(1)} microseconds.`, 'success');
-    setIsSearching(false);
-
-    // Post-checking Spelling Suggestion corrections
-    if (sortedResults.length === 0) {
-      const suggest = verifySpellchecks(searchQuery);
-      if (suggest) {
-        setSpellingSuggestion(suggest);
+        addStep('Coordinator merged shard segments, globally sorted by score...', 'info');
       }
+
+      const resultsWithDefaults: SearchResultItem[] = (data.results || []).map((r: any) => ({
+        id: r.id,
+        url: r.url,
+        title: r.title,
+        snippet: r.snippet,
+        score: r.score,
+        shardId: r.shardId,
+        matchTerms: r.matchTerms || searchQuery.toLowerCase().split(/\W+/).filter(Boolean)
+      }));
+
+      setResults(resultsWithDefaults);
+      triggerSearchMetric(data.latency, isCached);
+
+      addStep(`Distributed Search OK. ${resultsWithDefaults.length} hits in ${data.latency.toFixed(1)} ms (real Postgres query).`, 'success');
+
+      // Post-checking Spelling Suggestion corrections
+      if (resultsWithDefaults.length === 0) {
+        const suggest = verifySpellchecks(searchQuery);
+        if (suggest) {
+          setSpellingSuggestion(suggest);
+        }
+      }
+    } catch (err) {
+      addStep('ERROR: Failed to reach coordinator backend. Is the server running?', 'warning');
+      addTraceLog('Client', 'Coordinator', 'http::Error', 'Connection refused', 'ERROR');
     }
+
+    setIsSearching(false);
   };
 
   // Helper Snippet Markups

@@ -159,11 +159,31 @@ export const CrawlerSandbox: React.FC<CrawlerSandboxProps> = ({ addCrawlDocument
 
           addLog(nextUrl, 'PARSING', `Strip complete. Scraped ${sizeKb} kb HTML. Removed <script> blocks & CSS stylesheets.`);
 
-          // Step 5: Postings allocation and Shard Indexing
-          setTimeout(() => {
+          // Step 5: Postings allocation and Shard Indexing — POST to REAL backend
+          setTimeout(async () => {
             const shardId = (Math.floor(Math.random() * 3) + 1);
             
-            // Add directly into React Search Playground Corpora dynamically!
+            // POST to the coordinator which routes to the appropriate shard server
+            try {
+              const resp = await fetch('/api/crawl', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  shardId,
+                  url: nextUrl,
+                  title: chosenTitle,
+                  content: `To schedule URL download tasks concurrent execution indexing query layouts. ${chosenTitle}`,
+                  rawHtml: rawHtml,
+                  pageSize: sizeKb
+                })
+              });
+              const data = await resp.json();
+              addLog(nextUrl, 'INDEXED', `Indexed to Postgres via Shard 0${shardId} (docId: ${data.docId || 'N/A'})`);
+            } catch (e) {
+              addLog(nextUrl, 'INDEXED', `Indexed locally to Shard 0${shardId} (backend offline, using fallback)`);
+            }
+
+            // Also update React UI state
             addCrawlDocumentToIndex(shardId, {
               url: nextUrl,
               title: chosenTitle,
@@ -171,8 +191,6 @@ export const CrawlerSandbox: React.FC<CrawlerSandboxProps> = ({ addCrawlDocument
               rawHtml: rawHtml,
               pageSize: sizeKb
             });
-
-            addLog(nextUrl, 'INDEXED', `Indexed document. Computed ID & registered posting tokens to local Shard 0${shardId}`);
 
             // Enqueue discovered hyperlinks to frontier queue (BFS discovery)
             const gatheredLink = `${nextUrl}/concurrency-models`;
